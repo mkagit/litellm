@@ -10,10 +10,11 @@ import os
 from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, Set
 
 import httpx
+from fastapi import HTTPException
 
 from litellm._logging import verbose_proxy_logger
 from litellm._version import version as litellm_version
-from litellm.exceptions import GuardrailRaisedException, Timeout
+from litellm.exceptions import Timeout
 from litellm.integrations.custom_guardrail import (
     CustomGuardrail,
     log_guardrail_information,
@@ -478,10 +479,12 @@ class GenericGuardrailAPI(CustomGuardrail):
                 verbose_proxy_logger.warning(
                     "Generic Guardrail API blocked request: %s", error_message
                 )
-                raise GuardrailRaisedException(
-                    guardrail_name=GUARDRAIL_NAME,
-                    message=error_message,
-                    should_wrap_with_default_message=False,
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": error_message,
+                        "guardrail_name": GUARDRAIL_NAME,
+                    },
                 )
 
             return self._build_guardrail_return_inputs(
@@ -491,7 +494,7 @@ class GenericGuardrailAPI(CustomGuardrail):
                 guardrail_response=guardrail_response,
             )
 
-        except GuardrailRaisedException:
+        except HTTPException:
             raise
         except Timeout as e:
             return self._handle_guardrail_request_error(
