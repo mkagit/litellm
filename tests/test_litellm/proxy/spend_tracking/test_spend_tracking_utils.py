@@ -1194,6 +1194,10 @@ def test_get_logging_payload_guardrail_info_when_no_standard_logging_payload():
 
     metadata_result = json.loads(payload["metadata"])
     assert metadata_result["guardrail_information"] == guardrail_info
+    assert metadata_result["status_fields"] == {
+        "llm_api_status": "success",
+        "guardrail_status": "guardrail_intervened",
+    }
 
 
 def test_get_logging_payload_preserves_guardrail_status_fields_and_applied_guardrails():

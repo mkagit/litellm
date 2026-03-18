@@ -86,6 +86,11 @@ def _get_spend_logs_metadata(
     cost_breakdown: Optional[CostBreakdown] = None,
     status_fields: Optional[StandardLoggingPayloadStatusFields] = None,
 ) -> SpendLogsMetadata:
+    status_fields = _get_spend_logs_status_fields(
+        metadata=metadata,
+        guardrail_information=guardrail_information,
+        status_fields=status_fields,
+    )
     if metadata is None:
         return SpendLogsMetadata(
             user_api_key=None,
@@ -141,6 +146,37 @@ def _get_spend_logs_metadata(
     clean_metadata["cost_breakdown"] = cost_breakdown
 
     return clean_metadata
+
+
+def _get_spend_logs_status_fields(
+    metadata: Optional[dict],
+    guardrail_information: Optional[List[StandardLoggingGuardrailInformation]],
+    status_fields: Optional[StandardLoggingPayloadStatusFields],
+) -> Optional[StandardLoggingPayloadStatusFields]:
+    if status_fields is not None:
+        return status_fields
+
+    if metadata is None and not guardrail_information:
+        return None
+
+    from litellm.litellm_core_utils.litellm_logging import _get_status_fields
+
+    metadata_status = (
+        cast(Optional[str], metadata.get("status")) if metadata is not None else None
+    )
+    resolved_status: Literal["success", "failure"] = (
+        "failure" if metadata_status == "failure" else "success"
+    )
+    error_information = metadata.get("error_information") if metadata is not None else None
+    error_str = None
+    if isinstance(error_information, dict):
+        error_str = cast(Optional[str], error_information.get("error_message"))
+
+    return _get_status_fields(
+        status=resolved_status,
+        guardrail_information=guardrail_information,
+        error_str=error_str,
+    )
 
 
 def generate_hash_from_response(response_obj: Any) -> str:
