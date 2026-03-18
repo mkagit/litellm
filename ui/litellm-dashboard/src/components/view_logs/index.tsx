@@ -49,6 +49,21 @@ export interface PaginatedResponse {
   total_pages: number;
 }
 
+function getLegacyStatusBadge(metadata?: Record<string, any>) {
+  const statusPresentation = getLogStatusPresentation(metadata);
+  const classes =
+    statusPresentation.tone === "error"
+      ? "bg-red-100 text-red-800"
+      : statusPresentation.tone === "warning"
+        ? "bg-amber-100 text-amber-800"
+        : "bg-green-100 text-green-800";
+
+  return {
+    label: statusPresentation.label,
+    classes,
+  };
+}
+
 export default function SpendLogsTable({
   accessToken,
   token,
@@ -88,21 +103,6 @@ export default function SpendLogsTable({
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [isSpendLogsSettingsModalVisible, setIsSpendLogsSettingsModalVisible] = useState(false);
-
-  const getLegacyStatusBadge = useCallback((metadata?: Record<string, any>) => {
-    const statusPresentation = getLogStatusPresentation(metadata);
-    const classes =
-      statusPresentation.tone === "error"
-        ? "bg-red-100 text-red-800"
-        : statusPresentation.tone === "warning"
-          ? "bg-amber-100 text-amber-800"
-          : "bg-green-100 text-green-800";
-
-    return {
-      label: statusPresentation.label,
-      classes,
-    };
-  }, []);
 
   const [sortBy, setSortBy] = useState<LogsSortField>("startTime");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
