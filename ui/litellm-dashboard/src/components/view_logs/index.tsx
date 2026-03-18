@@ -29,6 +29,7 @@ import { getTimeRangeDisplay } from "./logs_utils";
 import { RequestResponsePanel } from "./RequestResponsePanel";
 import SpendLogsSettingsModal from "./SpendLogsSettingsModal/SpendLogsSettingsModal";
 import { DataTable } from "./table";
+import { getLogStatusPresentation } from "./utils";
 import { VectorStoreViewer } from "./VectorStoreViewer";
 
 interface SpendLogsTableProps {
@@ -87,6 +88,21 @@ export default function SpendLogsTable({
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [isSpendLogsSettingsModalVisible, setIsSpendLogsSettingsModalVisible] = useState(false);
+
+  const getLegacyStatusBadge = useCallback((metadata?: Record<string, any>) => {
+    const statusPresentation = getLogStatusPresentation(metadata);
+    const classes =
+      statusPresentation.tone === "error"
+        ? "bg-red-100 text-red-800"
+        : statusPresentation.tone === "warning"
+          ? "bg-amber-100 text-amber-800"
+          : "bg-green-100 text-green-800";
+
+    return {
+      label: statusPresentation.label,
+      classes,
+    };
+  }, []);
 
   const [sortBy, setSortBy] = useState<LogsSortField>("startTime");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
@@ -916,14 +932,16 @@ export function RequestViewer({ row, onOpenSettings }: { row: Row<LogEntry>; onO
 
             <div className="flex">
               <span className="font-medium w-1/3">Status:</span>
-              <span
-                className={`px-2 py-1 rounded-md text-xs font-medium inline-block text-center w-16 ${(row.original.metadata?.status || "Success").toLowerCase() !== "failure"
-                  ? "bg-green-100 text-green-800"
-                  : "bg-red-100 text-red-800"
-                  }`}
-              >
-                {(row.original.metadata?.status || "Success").toLowerCase() !== "failure" ? "Success" : "Failure"}
-              </span>
+              {(() => {
+                const statusBadge = getLegacyStatusBadge(row.original.metadata);
+                return (
+                  <span
+                    className={`px-2 py-1 rounded-md text-xs font-medium inline-block text-center w-16 ${statusBadge.classes}`}
+                  >
+                    {statusBadge.label}
+                  </span>
+                );
+              })()}
             </div>
             <div className="flex">
               <span className="font-medium w-1/3">Start Time:</span>

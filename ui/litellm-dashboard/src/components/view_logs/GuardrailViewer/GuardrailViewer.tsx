@@ -120,6 +120,36 @@ const isEntrySuccess = (entry: GuardrailInformation): boolean => {
   return (entry.guardrail_status ?? "").toLowerCase() === "success";
 };
 
+const getEntryStatusLabel = (entry: GuardrailInformation): string => {
+  switch ((entry.guardrail_status ?? "").toLowerCase()) {
+    case "success":
+      return "PASSED";
+    case "blocked":
+    case "guardrail_intervened":
+      return "INTERVENED";
+    case "failure":
+    case "guardrail_failed_to_respond":
+      return "ERROR";
+    default:
+      return "FAILED";
+  }
+};
+
+const getEntryStatusClasses = (entry: GuardrailInformation): string => {
+  switch ((entry.guardrail_status ?? "").toLowerCase()) {
+    case "success":
+      return "bg-green-100 text-green-700 border border-green-200";
+    case "blocked":
+    case "guardrail_intervened":
+      return "bg-amber-100 text-amber-700 border border-amber-200";
+    case "failure":
+    case "guardrail_failed_to_respond":
+      return "bg-red-100 text-red-700 border border-red-200";
+    default:
+      return "bg-red-100 text-red-700 border border-red-200";
+  }
+};
+
 const getRiskColor = (score: number): string => {
   if (score <= 3) return "text-green-600 bg-green-50 border-green-200";
   if (score <= 6) return "text-amber-600 bg-amber-50 border-amber-200";
@@ -401,6 +431,10 @@ const RequestLifecycle = ({ entries }: { entries: GuardrailInformation[] }) => {
     const preCalls = sorted.filter((e) => e.guardrail_mode === "pre_call");
     const postCalls = sorted.filter((e) => e.guardrail_mode === "post_call" || e.guardrail_mode === "logging_only");
     const duringCalls = sorted.filter((e) => e.guardrail_mode === "during_call");
+    const requestEndedBeforeLlm =
+      preCalls.some((entry) => !isEntrySuccess(entry)) &&
+      duringCalls.length === 0 &&
+      postCalls.length === 0;
 
     for (const e of preCalls) {
       const offsetMs = Math.round((e.end_time - baseTime) * 1000);
@@ -408,22 +442,24 @@ const RequestLifecycle = ({ entries }: { entries: GuardrailInformation[] }) => {
         type: "guardrail",
         label: `Pre-call guardrail: ${getDisplayName(e)}`,
         offsetMs,
-        status: isEntrySuccess(e) ? "PASSED" : "FAILED",
+        status: getEntryStatusLabel(e),
         isSuccess: isEntrySuccess(e),
       });
     }
 
-    // LLM call — infer from gap between pre-call end and post-call start
-    const lastPreEnd = preCalls.length > 0 ? Math.max(...preCalls.map((e) => e.end_time)) : baseTime;
-    const firstPostStart = postCalls.length > 0 ? Math.min(...postCalls.map((e) => e.start_time)) : undefined;
-    const llmEndTime = firstPostStart ?? (lastPreEnd + 1);
-    const llmOffsetMs = Math.round((llmEndTime - baseTime) * 1000);
+    if (!requestEndedBeforeLlm) {
+      // LLM call — infer from gap between pre-call end and post-call start
+      const lastPreEnd = preCalls.length > 0 ? Math.max(...preCalls.map((e) => e.end_time)) : baseTime;
+      const firstPostStart = postCalls.length > 0 ? Math.min(...postCalls.map((e) => e.start_time)) : undefined;
+      const llmEndTime = firstPostStart ?? (lastPreEnd + 1);
+      const llmOffsetMs = Math.round((llmEndTime - baseTime) * 1000);
 
-    items.push({
-      type: "llm",
-      label: "LLM call",
-      offsetMs: llmOffsetMs,
-    });
+      items.push({
+        type: "llm",
+        label: "LLM call",
+        offsetMs: llmOffsetMs,
+      });
+    }
 
     // During-call guardrails (rare)
     for (const e of duringCalls) {
@@ -432,7 +468,7 @@ const RequestLifecycle = ({ entries }: { entries: GuardrailInformation[] }) => {
         type: "guardrail",
         label: `During-call guardrail: ${getDisplayName(e)}`,
         offsetMs,
-        status: isEntrySuccess(e) ? "PASSED" : "FAILED",
+        status: getEntryStatusLabel(e),
         isSuccess: isEntrySuccess(e),
       });
     }
@@ -444,7 +480,7 @@ const RequestLifecycle = ({ entries }: { entries: GuardrailInformation[] }) => {
         type: "guardrail",
         label: `Post-call guardrail: ${getDisplayName(e)}`,
         offsetMs,
-        status: isEntrySuccess(e) ? "PASSED" : "FAILED",
+        status: getEntryStatusLabel(e),
         isSuccess: isEntrySuccess(e),
       });
     }
@@ -521,6 +557,7 @@ const RequestLifecycle = ({ entries }: { entries: GuardrailInformation[] }) => {
 const EvaluationCard = ({ entry }: { entry: GuardrailInformation }) => {
   const [expanded, setExpanded] = useState(false);
   const success = isEntrySuccess(entry);
+  const statusLabel = getEntryStatusLabel(entry);
   const totalMasked = getTotalMasked(entry);
   const displayName = getDisplayName(entry);
   const durationStr = formatDurationMs(entry.duration);
@@ -567,11 +604,9 @@ const EvaluationCard = ({ entry }: { entry: GuardrailInformation }) => {
           </span>
 
           <span
-            className={`px-2 py-0.5 rounded text-[11px] font-semibold uppercase flex-shrink-0 ${
-              success ? "bg-green-100 text-green-700 border border-green-200" : "bg-red-100 text-red-700 border border-red-200"
-            }`}
+            className={`px-2 py-0.5 rounded text-[11px] font-semibold uppercase flex-shrink-0 ${getEntryStatusClasses(entry)}`}
           >
-            {success ? "PASSED" : "FAILED"}
+            {statusLabel}
           </span>
 
           {matchCountStr && (

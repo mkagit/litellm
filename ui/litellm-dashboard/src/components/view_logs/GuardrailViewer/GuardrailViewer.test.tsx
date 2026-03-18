@@ -202,5 +202,7 @@ describe("GuardrailViewer", () => {
     expect(screen.getByText("baseline-youth-guardrails")).toBeInTheDocument();
     expect(screen.getByText("child-policy-judge-pre")).toBeInTheDocument();
     expect(screen.getByText("SKIPPED")).toBeInTheDocument();
+    expect(screen.getAllByText("INTERVENED").length).toBeGreaterThan(0);
+    expect(screen.queryByText("LLM call")).not.toBeInTheDocument();
   });
 });
