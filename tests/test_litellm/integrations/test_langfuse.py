@@ -263,6 +263,63 @@ class TestLangfuseUsageDetails(unittest.TestCase):
         self.assertEqual(usage_details["cache_creation_input_tokens"], 7)
         self.assertEqual(usage_details["cache_read_input_tokens"], 4)
 
+    def test_log_guardrail_information_as_span_deduplicates_identical_entries(self):
+        standard_logging_object: StandardLoggingPayload = {
+            "guardrail_information": [
+                {
+                    "guardrail_name": "openai-moderation-pre",
+                    "guardrail_mode": "pre_call",
+                    "guardrail_status": "success",
+                    "start_time": 100.0,
+                    "end_time": 101.0,
+                    "duration": 1.0,
+                    "guardrail_response": {"message": "allowed"},
+                },
+                {
+                    "guardrail_name": "openai-moderation-pre",
+                    "guardrail_mode": "pre_call",
+                    "guardrail_status": "success",
+                    "start_time": 100.0,
+                    "end_time": 101.0,
+                    "duration": 1.0,
+                    "guardrail_response": {"message": "allowed"},
+                },
+                {
+                    "guardrail_name": "child-policy-judge-pre",
+                    "guardrail_mode": "pre_call",
+                    "guardrail_status": "guardrail_intervened",
+                    "start_time": 101.0,
+                    "end_time": 102.0,
+                    "duration": 1.0,
+                    "guardrail_response": {"message": "blocked"},
+                    "pipeline_information": {
+                        "policy": "baseline-youth-guardrails",
+                        "current_step_index": 1,
+                    },
+                },
+                {
+                    "guardrail_name": "child-policy-judge-pre",
+                    "guardrail_mode": "pre_call",
+                    "guardrail_status": "guardrail_intervened",
+                    "start_time": 101.0,
+                    "end_time": 102.0,
+                    "duration": 1.0,
+                    "guardrail_response": {"message": "blocked"},
+                    "pipeline_information": {
+                        "policy": "baseline-youth-guardrails",
+                        "current_step_index": 1,
+                    },
+                },
+            ]
+        }
+
+        self.logger._log_guardrail_information_as_span(
+            trace=self.mock_langfuse_trace,
+            standard_logging_object=standard_logging_object,
+        )
+
+        assert self.mock_langfuse_trace.span.call_count == 2
+
     def test_log_langfuse_v2_handles_null_usage_values(self):
         """
         Test that _log_langfuse_v2 correctly handles None values in the usage object

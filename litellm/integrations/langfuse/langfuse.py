@@ -1079,6 +1079,7 @@ class LangFuseLogger:
             )
             return
 
+        seen_span_fingerprints: set[tuple[Any, ...]] = set()
         for guardrail_entry in guardrail_information:
             if not isinstance(guardrail_entry, dict):
                 verbose_logger.debug(
@@ -1088,6 +1089,29 @@ class LangFuseLogger:
                 continue
 
             guardrail_name = guardrail_entry.get("guardrail_name", None)
+            pipeline_information = guardrail_entry.get("pipeline_information", None)
+            current_step_index = (
+                pipeline_information.get("current_step_index", None)
+                if isinstance(pipeline_information, dict)
+                else None
+            )
+            span_fingerprint = (
+                guardrail_name,
+                guardrail_entry.get("guardrail_mode", None),
+                guardrail_entry.get("guardrail_status", None),
+                guardrail_entry.get("start_time", None),
+                guardrail_entry.get("end_time", None),
+                guardrail_entry.get("duration", None),
+                current_step_index,
+            )
+            if span_fingerprint in seen_span_fingerprints:
+                verbose_logger.debug(
+                    "Skipping duplicate guardrail span for fingerprint=%s",
+                    span_fingerprint,
+                )
+                continue
+            seen_span_fingerprints.add(span_fingerprint)
+
             span_name = (
                 f"guardrail:{guardrail_name}" if guardrail_name is not None else "guardrail"
             )
@@ -1101,7 +1125,6 @@ class LangFuseLogger:
                 "guardrail_provider": guardrail_entry.get("guardrail_provider", None),
                 "guardrail_status": guardrail_entry.get("guardrail_status", None),
             }
-            pipeline_information = guardrail_entry.get("pipeline_information", None)
             if isinstance(pipeline_information, dict):
                 span_metadata["guardrail_pipeline_policy"] = pipeline_information.get(
                     "policy", None
