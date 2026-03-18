@@ -1,6 +1,7 @@
 import os
 import sys
 import traceback
+from datetime import datetime
 from unittest import mock
 
 from dotenv import load_dotenv
@@ -39,7 +40,9 @@ from fastapi import FastAPI
 # test /chat/completion request to the proxy
 from fastapi.testclient import TestClient
 
+from litellm.integrations.custom_guardrail import ModifyResponseException
 from litellm.integrations.custom_logger import CustomLogger
+from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy.proxy_server import (  # Replace with the actual module where your FastAPI router is defined
     app,
     initialize,
@@ -1566,6 +1569,177 @@ async def test_add_callback_via_key(prisma_client):
             assert checked_keys
     except Exception as e:
         pytest.fail(f"LiteLLM Proxy test failed. Exception - {str(e)}")
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_streaming_modify_response_uses_request_logging_obj(monkeypatch):
+    import json
+
+    from fastapi import Request, Response
+    from starlette.datastructures import URL
+
+    from litellm.proxy.proxy_server import chat_completion
+
+    request = Request(scope={"type": "http", "method": "POST", "headers": []})
+    request._url = URL(url="/chat/completions")
+    request._body = json.dumps(
+        {
+            "model": "gpt-3.5-turbo",
+            "messages": [{"role": "user", "content": "blocked"}],
+            "stream": True,
+        }
+    ).encode("utf-8")
+
+    logging_obj = Logging(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": "blocked"}],
+        stream=True,
+        call_type="acompletion",
+        start_time=datetime.now(),
+        litellm_call_id="guardrail-test-call",
+        function_id="guardrail-test-function",
+    )
+    request_data = {
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": "blocked"}],
+        "stream": True,
+        "litellm_logging_obj": logging_obj,
+    }
+
+    async def _raise_modify_response(*args, **kwargs):
+        raise ModifyResponseException(
+            message="Blocked by guardrail",
+            model="gpt-3.5-turbo",
+            request_data=request_data,
+            guardrail_name="pipeline:test-policy",
+            detection_info=None,
+        )
+
+    post_call_failure_hook = AsyncMock()
+    select_data_generator = mock.Mock(side_effect=lambda response, **kwargs: response)
+    function_setup = mock.Mock()
+
+    monkeypatch.setattr(
+        litellm.proxy.proxy_server.ProxyBaseLLMRequestProcessing,
+        "base_process_llm_request",
+        _raise_modify_response,
+    )
+    monkeypatch.setattr(
+        litellm.proxy.proxy_server.proxy_logging_obj,
+        "post_call_failure_hook",
+        post_call_failure_hook,
+    )
+    monkeypatch.setattr(
+        litellm.proxy.proxy_server,
+        "select_data_generator",
+        select_data_generator,
+    )
+    monkeypatch.setattr(litellm.utils, "function_setup", function_setup)
+
+    response = await chat_completion(
+        request=request,
+        fastapi_response=Response(),
+        user_api_key_dict=UserAPIKeyAuth(),
+    )
+
+    assert response.status_code == 200
+    assert response.media_type == "text/event-stream"
+    post_call_failure_hook.assert_awaited_once()
+    select_data_generator.assert_called_once()
+    assert select_data_generator.call_args.kwargs["request_data"] is request_data
+    assert select_data_generator.call_args.kwargs["response"].logging_obj is logging_obj
+
+    chunks = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+
+    assert chunks
+    function_setup.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_streaming_modify_response_builds_logging_obj_when_missing(
+    monkeypatch,
+):
+    import json
+
+    from fastapi import Request, Response
+    from starlette.datastructures import URL
+
+    from litellm.proxy.proxy_server import chat_completion
+
+    request = Request(scope={"type": "http", "method": "POST", "headers": []})
+    request._url = URL(url="/chat/completions")
+    request._body = json.dumps(
+        {
+            "model": "gpt-3.5-turbo",
+            "messages": [{"role": "user", "content": "blocked"}],
+            "stream": True,
+        }
+    ).encode("utf-8")
+
+    request_data = {
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": "blocked"}],
+        "stream": True,
+    }
+
+    async def _raise_modify_response(*args, **kwargs):
+        raise ModifyResponseException(
+            message="Blocked by guardrail",
+            model="gpt-3.5-turbo",
+            request_data=request_data,
+            guardrail_name="pipeline:test-policy",
+            detection_info=None,
+        )
+
+    fallback_logging_obj = Logging(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": "blocked"}],
+        stream=True,
+        call_type="acompletion",
+        start_time=datetime.now(),
+        litellm_call_id="guardrail-fallback-call",
+        function_id="guardrail-fallback-function",
+    )
+
+    post_call_failure_hook = AsyncMock()
+    select_data_generator = mock.Mock(side_effect=lambda response, **kwargs: response)
+    function_setup = mock.Mock(return_value=(fallback_logging_obj, request_data))
+
+    monkeypatch.setattr(
+        litellm.proxy.proxy_server.ProxyBaseLLMRequestProcessing,
+        "base_process_llm_request",
+        _raise_modify_response,
+    )
+    monkeypatch.setattr(
+        litellm.proxy.proxy_server.proxy_logging_obj,
+        "post_call_failure_hook",
+        post_call_failure_hook,
+    )
+    monkeypatch.setattr(
+        litellm.proxy.proxy_server,
+        "select_data_generator",
+        select_data_generator,
+    )
+    monkeypatch.setattr(litellm.utils, "function_setup", function_setup)
+
+    response = await chat_completion(
+        request=request,
+        fastapi_response=Response(),
+        user_api_key_dict=UserAPIKeyAuth(),
+    )
+
+    assert response.status_code == 200
+    function_setup.assert_called_once()
+    assert request_data["litellm_logging_obj"] is fallback_logging_obj
+    assert select_data_generator.call_args.kwargs["response"].logging_obj is fallback_logging_obj
+
+    chunks = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+
+    assert chunks
 
 
 @pytest.mark.asyncio
