@@ -6789,7 +6789,7 @@ async def chat_completion(  # noqa: PLR0915
             return result
     except ModifyResponseException as e:
         # Guardrail flagged content in passthrough mode - return 200 with violation message
-        _data = e.request_data
+        _data = e.request_data or data
         await proxy_logging_obj.post_call_failure_hook(
             user_api_key_dict=user_api_key_dict,
             original_exception=e,
@@ -6800,7 +6800,18 @@ async def chat_completion(  # noqa: PLR0915
         _chat_response.choices[0].message.content = e.message  # type: ignore
         _chat_response.choices[0].finish_reason = "content_filter"  # type: ignore
 
-        if data.get("stream", None) is not None and data["stream"] is True:
+        if _data.get("stream", None) is not None and _data["stream"] is True:
+            logging_obj = _data.get("litellm_logging_obj") or data.get(
+                "litellm_logging_obj"
+            )
+            if logging_obj is None:
+                logging_obj, _ = litellm.utils.function_setup(
+                    original_function="acompletion",
+                    rules_obj=litellm.utils.Rules(),
+                    start_time=datetime.now(),
+                    **_data,
+                )
+                _data["litellm_logging_obj"] = logging_obj
             _iterator = litellm.utils.ModelResponseIterator(
                 model_response=_chat_response, convert_to_delta=True
             )
@@ -6808,7 +6819,7 @@ async def chat_completion(  # noqa: PLR0915
                 completion_stream=_iterator,
                 model=e.model,
                 custom_llm_provider="cached_response",
-                logging_obj=data.get("litellm_logging_obj", None),
+                logging_obj=logging_obj,
             )
             selected_data_generator = select_data_generator(
                 response=_streaming_response,
