@@ -2,22 +2,20 @@ import datetime as real_datetime
 import json
 import os
 import sys
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
 
 import litellm
 from litellm.caching.caching import DualCache
-from litellm.integrations.custom_guardrail import CustomGuardrail
+from litellm.integrations.custom_guardrail import CustomGuardrail, ModifyResponseException
 from litellm.proxy._types import ProxyErrorTypes
 from litellm.proxy.utils import ProxyLogging
 
 sys.path.insert(
     0, os.path.abspath("../../..")
 )  # Adds the parent directory to the system path
-
-
-from unittest.mock import MagicMock
 
 from litellm.proxy.utils import get_custom_url, join_paths
 
@@ -114,6 +112,47 @@ async def test_pre_call_hook_skips_pipeline_managed_guardrail_list():
 
     assert result is not None
     assert guardrail.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_post_call_failure_hook_skips_proxy_failure_logging_for_guardrail_http_exception():
+    proxy_logging_obj = ProxyLogging(user_api_key_cache=DualCache())
+    proxy_logging_obj.update_request_status = AsyncMock()
+    proxy_logging_obj._handle_logging_proxy_only_error = AsyncMock()
+
+    await proxy_logging_obj.post_call_failure_hook(
+        request_data={"litellm_call_id": "guardrail-http-400"},
+        original_exception=HTTPException(
+            status_code=400,
+            detail={"error": "Blocked by guardrail"},
+        ),
+        user_api_key_dict=MagicMock(request_route="/v1/chat/completions"),
+    )
+
+    proxy_logging_obj.update_request_status.assert_not_awaited()
+    proxy_logging_obj._handle_logging_proxy_only_error.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_post_call_failure_hook_skips_proxy_failure_logging_for_modify_response_exception():
+    proxy_logging_obj = ProxyLogging(user_api_key_cache=DualCache())
+    proxy_logging_obj.update_request_status = AsyncMock()
+    proxy_logging_obj._handle_logging_proxy_only_error = AsyncMock()
+
+    await proxy_logging_obj.post_call_failure_hook(
+        request_data={"litellm_call_id": "guardrail-modify-response"},
+        original_exception=ModifyResponseException(
+            message="Blocked by guardrail",
+            model="gpt-4o-mini",
+            request_data={"stream": True},
+            guardrail_name="pipeline:test-policy",
+            detection_info=None,
+        ),
+        user_api_key_dict=MagicMock(request_route="/v1/chat/completions"),
+    )
+
+    proxy_logging_obj.update_request_status.assert_not_awaited()
+    proxy_logging_obj._handle_logging_proxy_only_error.assert_not_awaited()
 
 
 def test_get_model_group_info_order():

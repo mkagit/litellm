@@ -1694,13 +1694,20 @@ class ProxyLogging:
             - Optional[HTTPException]: If any callback returns or raises an HTTPException, the first one found is returned.
                                       Otherwise, returns None and the original exception is used.
         """
+        is_guardrail_intervention = CustomGuardrail._is_guardrail_intervention(
+            original_exception
+        )
 
         ### ALERTING ###
-        await self.update_request_status(
-            litellm_call_id=request_data.get("litellm_call_id", ""), status="fail"
-        )
-        if AlertType.llm_exceptions in self.alert_types and not isinstance(
-            original_exception, HTTPException
+        if not is_guardrail_intervention:
+            await self.update_request_status(
+                litellm_call_id=request_data.get("litellm_call_id", ""),
+                status="fail",
+            )
+        if (
+            not is_guardrail_intervention
+            and AlertType.llm_exceptions in self.alert_types
+            and not isinstance(original_exception, HTTPException)
         ):
             """
             Just alert on LLM API exceptions. Do not alert on user errors
@@ -1722,7 +1729,7 @@ class ProxyLogging:
             )
 
         ### LOGGING ###
-        if self._is_proxy_only_llm_api_error(
+        if not is_guardrail_intervention and self._is_proxy_only_llm_api_error(
             original_exception=original_exception,
             error_type=error_type,
             route=user_api_key_dict.request_route,
