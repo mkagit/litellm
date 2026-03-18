@@ -57,6 +57,7 @@ class PipelineExecutor:
             PipelineExecutionResult with terminal action and step results
         """
         step_results: List[PipelineStepResult] = []
+        configured_guardrails = [step.guardrail for step in steps]
         working_data = data.copy()
         if "metadata" in working_data:
             working_data["metadata"] = working_data["metadata"].copy()
@@ -100,6 +101,7 @@ class PipelineExecutor:
                 return PipelineExecutionResult(
                     terminal_action="allow",
                     step_results=step_results,
+                    configured_guardrails=configured_guardrails,
                     modified_data=working_data if working_data != data else None,
                 )
 
@@ -107,6 +109,8 @@ class PipelineExecutor:
                 return PipelineExecutionResult(
                     terminal_action="block",
                     step_results=step_results,
+                    configured_guardrails=configured_guardrails,
+                    modified_data=working_data if working_data != data else None,
                     error_message=error_detail,
                 )
 
@@ -114,6 +118,8 @@ class PipelineExecutor:
                 return PipelineExecutionResult(
                     terminal_action="modify_response",
                     step_results=step_results,
+                    configured_guardrails=configured_guardrails,
+                    modified_data=working_data if working_data != data else None,
                     modify_response_message=step.modify_response_message
                     or error_detail,
                 )
@@ -124,6 +130,7 @@ class PipelineExecutor:
         return PipelineExecutionResult(
             terminal_action="allow",
             step_results=step_results,
+            configured_guardrails=configured_guardrails,
             modified_data=working_data if working_data != data else None,
         )
 

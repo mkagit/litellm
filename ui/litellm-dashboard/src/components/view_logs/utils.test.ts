@@ -30,4 +30,23 @@ describe("view_logs utils", () => {
       }),
     ).toEqual(["openai-moderation-pre", "child-policy-judge-pre"]);
   });
+
+  it("should prioritize intervened guardrails over earlier successful pipeline steps", () => {
+    const presentation = getLogStatusPresentation({
+      status: "success",
+      guardrail_information: [
+        { guardrail_name: "openai-moderation-pre", guardrail_status: "success" },
+        {
+          guardrail_name: "child-policy-judge-pre",
+          guardrail_status: "guardrail_intervened",
+        },
+      ],
+    });
+
+    expect(presentation).toEqual({
+      label: "Guardrail",
+      tone: "warning",
+      detail: "Guardrails: openai-moderation-pre, child-policy-judge-pre",
+    });
+  });
 });

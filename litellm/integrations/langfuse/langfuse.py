@@ -1101,6 +1101,23 @@ class LangFuseLogger:
                 "guardrail_provider": guardrail_entry.get("guardrail_provider", None),
                 "guardrail_status": guardrail_entry.get("guardrail_status", None),
             }
+            pipeline_information = guardrail_entry.get("pipeline_information", None)
+            if isinstance(pipeline_information, dict):
+                span_metadata["guardrail_pipeline_policy"] = pipeline_information.get(
+                    "policy", None
+                )
+                span_metadata[
+                    "guardrail_pipeline_terminal_action"
+                ] = pipeline_information.get("terminal_action", None)
+                span_metadata[
+                    "guardrail_pipeline_configured_guardrails"
+                ] = pipeline_information.get("configured_guardrails", None)
+                span_metadata[
+                    "guardrail_pipeline_executed_guardrails"
+                ] = pipeline_information.get("executed_guardrails", None)
+                span_metadata[
+                    "guardrail_pipeline_skipped_guardrails"
+                ] = pipeline_information.get("skipped_guardrails", None)
             if isinstance(guardrail_response, dict):
                 span_metadata["guardrail_policy"] = guardrail_response.get(
                     "policy", None
@@ -1154,6 +1171,37 @@ class LangFuseLogger:
                     and entry.get("guardrail_name") is not None
                 ],
             }
+            pipeline_summaries: List[Dict[str, Any]] = []
+            seen_policies: set[str] = set()
+            for entry in guardrail_information:
+                if not isinstance(entry, dict):
+                    continue
+                pipeline_information = entry.get("pipeline_information")
+                if not isinstance(pipeline_information, dict):
+                    continue
+                pipeline_policy = pipeline_information.get("policy")
+                if not isinstance(pipeline_policy, str) or pipeline_policy in seen_policies:
+                    continue
+                seen_policies.add(pipeline_policy)
+                pipeline_summaries.append(
+                    {
+                        "policy": pipeline_policy,
+                        "terminal_action": pipeline_information.get(
+                            "terminal_action", None
+                        ),
+                        "configured_guardrails": pipeline_information.get(
+                            "configured_guardrails", None
+                        ),
+                        "executed_guardrails": pipeline_information.get(
+                            "executed_guardrails", None
+                        ),
+                        "skipped_guardrails": pipeline_information.get(
+                            "skipped_guardrails", None
+                        ),
+                    }
+                )
+            if pipeline_summaries:
+                trace_metadata["guardrail_pipelines"] = pipeline_summaries
 
         return trace_metadata
 

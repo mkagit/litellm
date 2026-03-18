@@ -196,6 +196,129 @@ def test_handle_pipeline_result_adds_guardrail_information_for_modify_response()
     assert info[0]["guardrail_mode"] == GuardrailEventHooks.pre_call.value
 
 
+def test_handle_pipeline_result_preserves_pipeline_history_and_skipped_steps():
+    result = SimpleNamespace(
+        terminal_action="modify_response",
+        modify_response_message="Blocked by policy",
+        error_message=None,
+        configured_guardrails=["openai-moderation-pre", "generic-api"],
+        modified_data={
+            "metadata": {
+                "standard_logging_guardrail_information": [
+                    {
+                        "guardrail_name": "openai-moderation-pre",
+                        "guardrail_status": "guardrail_intervened",
+                        "guardrail_mode": GuardrailEventHooks.pre_call.value,
+                        "guardrail_response": {"message": "blocked"},
+                        "duration": 0.12,
+                    }
+                ]
+            }
+        },
+        step_results=[
+            SimpleNamespace(
+                guardrail_name="openai-moderation-pre",
+                outcome="fail",
+                action_taken="modify_response",
+                error_detail="Blocked by policy",
+                duration_seconds=0.12,
+            )
+        ],
+    )
+    data = {"metadata": {}}
+
+    with pytest.raises(ModifyResponseException):
+        ProxyLogging._handle_pipeline_result(
+            result=result,
+            data=data,
+            policy_name="baseline-youth-guardrails",
+            event_hook=GuardrailEventHooks.pre_call.value,
+        )
+
+    info = data["metadata"]["standard_logging_guardrail_information"]
+    assert len(info) == 1
+    assert data["metadata"]["applied_guardrails"] == ["openai-moderation-pre"]
+    assert info[0]["pipeline_information"]["policy"] == "baseline-youth-guardrails"
+    assert info[0]["pipeline_information"]["configured_guardrails"] == [
+        "openai-moderation-pre",
+        "generic-api",
+    ]
+    assert info[0]["pipeline_information"]["executed_guardrails"] == [
+        "openai-moderation-pre"
+    ]
+    assert info[0]["pipeline_information"]["skipped_guardrails"] == ["generic-api"]
+
+
+def test_handle_pipeline_result_preserves_all_executed_guardrails():
+    result = SimpleNamespace(
+        terminal_action="modify_response",
+        modify_response_message="Blocked by policy",
+        error_message=None,
+        configured_guardrails=["openai-moderation-pre", "generic-api"],
+        modified_data={
+            "metadata": {
+                "standard_logging_guardrail_information": [
+                    {
+                        "guardrail_name": "openai-moderation-pre",
+                        "guardrail_status": "success",
+                        "guardrail_mode": GuardrailEventHooks.pre_call.value,
+                        "guardrail_response": {"message": "allowed"},
+                        "duration": 0.08,
+                    },
+                    {
+                        "guardrail_name": "generic-api",
+                        "guardrail_status": "guardrail_intervened",
+                        "guardrail_mode": GuardrailEventHooks.pre_call.value,
+                        "guardrail_response": {"message": "blocked"},
+                        "duration": 0.18,
+                    },
+                ]
+            }
+        },
+        step_results=[
+            SimpleNamespace(
+                guardrail_name="openai-moderation-pre",
+                outcome="pass",
+                action_taken="next",
+                error_detail=None,
+                duration_seconds=0.08,
+            ),
+            SimpleNamespace(
+                guardrail_name="generic-api",
+                outcome="fail",
+                action_taken="modify_response",
+                error_detail="Blocked by policy",
+                duration_seconds=0.18,
+            ),
+        ],
+    )
+    data = {"metadata": {}}
+
+    with pytest.raises(ModifyResponseException):
+        ProxyLogging._handle_pipeline_result(
+            result=result,
+            data=data,
+            policy_name="baseline-youth-guardrails",
+            event_hook=GuardrailEventHooks.pre_call.value,
+        )
+
+    info = data["metadata"]["standard_logging_guardrail_information"]
+    assert [entry["guardrail_name"] for entry in info] == [
+        "openai-moderation-pre",
+        "generic-api",
+    ]
+    assert data["metadata"]["applied_guardrails"] == [
+        "openai-moderation-pre",
+        "generic-api",
+    ]
+    assert info[0]["pipeline_information"]["executed_guardrails"] == [
+        "openai-moderation-pre",
+        "generic-api",
+    ]
+    assert info[0]["pipeline_information"]["skipped_guardrails"] == []
+    assert info[1]["pipeline_information"]["current_step_guardrail"] == "generic-api"
+
+
 def test_get_model_group_info_order():
     from litellm import Router
     from litellm.proxy.proxy_server import _get_model_group_info

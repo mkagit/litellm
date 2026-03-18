@@ -42,20 +42,32 @@ function getNormalizedGuardrailStatus(metadata?: Record<string, any>): Guardrail
     : metadata?.guardrail_information
       ? [metadata.guardrail_information]
       : [];
-  const rawStatus = entries.find((entry) => typeof entry?.guardrail_status === "string")?.guardrail_status;
+  const normalizedStatuses = entries
+    .map((entry) => {
+      switch (entry?.guardrail_status) {
+        case "blocked":
+        case "guardrail_intervened":
+          return "guardrail_intervened" as const;
+        case "failure":
+        case "guardrail_failed_to_respond":
+          return "guardrail_failed_to_respond" as const;
+        case "success":
+          return "success" as const;
+        default:
+          return "not_run" as const;
+      }
+    });
 
-  switch (rawStatus) {
-    case "blocked":
-    case "guardrail_intervened":
-      return "guardrail_intervened";
-    case "failure":
-    case "guardrail_failed_to_respond":
-      return "guardrail_failed_to_respond";
-    case "success":
-      return "success";
-    default:
-      return "not_run";
+  if (normalizedStatuses.includes("guardrail_failed_to_respond")) {
+    return "guardrail_failed_to_respond";
   }
+  if (normalizedStatuses.includes("guardrail_intervened")) {
+    return "guardrail_intervened";
+  }
+  if (normalizedStatuses.includes("success")) {
+    return "success";
+  }
+  return "not_run";
 }
 
 export function getAppliedGuardrailNames(metadata?: Record<string, any>): string[] {

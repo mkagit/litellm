@@ -70,7 +70,14 @@ export function LogDetailContent({ logEntry, onOpenSettings, isLoadingDetails = 
   const totalMaskedEntities = calculateTotalMaskedEntities(guardrailEntries);
   const primaryGuardrailLabel = getGuardrailLabel(guardrailEntries);
   const appliedGuardrailNames = getAppliedGuardrailNames(metadata);
-  const primaryGuardrailEntry = guardrailEntries[0];
+  const primaryGuardrailEntry =
+    guardrailEntries.find(
+      (entry) =>
+        entry?.guardrail_status === "guardrail_intervened" ||
+        entry?.guardrail_status === "guardrail_failed_to_respond" ||
+        entry?.guardrail_status === "blocked" ||
+        entry?.guardrail_status === "failure",
+    ) ?? guardrailEntries[0];
   const primaryGuardrailMessage =
     primaryGuardrailEntry?.guardrail_response?.message ||
     primaryGuardrailEntry?.guardrail_response?.blocked_reason ||

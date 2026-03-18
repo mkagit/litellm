@@ -739,3 +739,28 @@ def test_guardrail_status_fields_computation():
     )
     assert status_fields_no_guardrail.get("llm_api_status") == "success"
     assert status_fields_no_guardrail.get("guardrail_status") == "not_run"
+
+    multi_step_info = [
+        {"guardrail_status": "success"},
+        {"guardrail_status": "guardrail_intervened"},
+    ]
+    status_fields_multi_step = _get_status_fields(
+        status="success",
+        guardrail_information=multi_step_info,
+        error_str=None,
+    )
+    assert status_fields_multi_step.get("guardrail_status") == "guardrail_intervened"
+
+    multi_step_failure = [
+        {"guardrail_status": "success"},
+        {"guardrail_status": "guardrail_failed_to_respond"},
+    ]
+    status_fields_multi_step_failure = _get_status_fields(
+        status="failure",
+        guardrail_information=multi_step_failure,
+        error_str=None,
+    )
+    assert (
+        status_fields_multi_step_failure.get("guardrail_status")
+        == "guardrail_failed_to_respond"
+    )

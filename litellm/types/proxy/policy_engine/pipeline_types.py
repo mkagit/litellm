@@ -93,6 +93,7 @@ class PipelineExecutionResult(BaseModel):
 
     terminal_action: str  # block | allow | modify_response
     step_results: List[PipelineStepResult]
+    configured_guardrails: Optional[List[str]] = None
     modified_data: Optional[Dict[str, Any]] = None
     error_message: Optional[str] = None
     modify_response_message: Optional[str] = None

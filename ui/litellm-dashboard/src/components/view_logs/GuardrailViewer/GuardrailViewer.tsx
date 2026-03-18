@@ -36,6 +36,26 @@ interface MatchDetail {
   position?: number;
 }
 
+interface PipelineStepResult {
+  guardrail: string;
+  outcome: string;
+  action: string;
+  error_detail?: string | null;
+  duration_seconds?: number | null;
+}
+
+interface PipelineInformation {
+  policy?: string;
+  guardrail_mode?: string;
+  terminal_action?: string;
+  configured_guardrails?: string[];
+  executed_guardrails?: string[];
+  skipped_guardrails?: string[];
+  step_results?: PipelineStepResult[];
+  current_step_index?: number;
+  current_step_guardrail?: string;
+}
+
 interface GuardrailInformation {
   duration: number;
   end_time: number;
@@ -55,6 +75,7 @@ interface GuardrailInformation {
   patterns_checked?: number;
   alert_recipients?: string[];
   risk_score?: number;
+  pipeline_information?: PipelineInformation;
 }
 
 interface GuardrailViewerProps {
@@ -126,6 +147,32 @@ const getRiskScore = (entry: GuardrailInformation): number | null => {
 
 const getDisplayName = (entry: GuardrailInformation): string => {
   return entry.policy_template || entry.guardrail_name;
+};
+
+const formatPipelineOutcome = (outcome?: string): string => {
+  switch ((outcome ?? "").toLowerCase()) {
+    case "pass":
+      return "PASSED";
+    case "fail":
+      return "BLOCKED";
+    case "error":
+      return "ERROR";
+    default:
+      return "SKIPPED";
+  }
+};
+
+const getPipelineOutcomeClasses = (outcome?: string): string => {
+  switch ((outcome ?? "").toLowerCase()) {
+    case "pass":
+      return "bg-green-50 text-green-700 border border-green-200";
+    case "fail":
+      return "bg-amber-50 text-amber-700 border border-amber-200";
+    case "error":
+      return "bg-red-50 text-red-700 border border-red-200";
+    default:
+      return "bg-slate-100 text-slate-700 border border-slate-200";
+  }
 };
 
 // ── Icons (inline SVGs) ─────────────────────────────────────────────────────
@@ -271,6 +318,55 @@ const GenericGuardrailResponse = ({ response }: { response: any }) => {
             </pre>
           </div>
         )}
+      </div>
+    </div>
+  );
+};
+
+const PipelineSummary = ({ pipelineInformation }: { pipelineInformation: PipelineInformation }) => {
+  const configuredGuardrails = pipelineInformation.configured_guardrails ?? [];
+  const stepResults = pipelineInformation.step_results ?? [];
+  const stepResultMap = new Map(stepResults.map((step) => [step.guardrail, step]));
+
+  if (configuredGuardrails.length === 0 && stepResults.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <h5 className="text-sm font-medium text-slate-800">Pipeline Summary</h5>
+        {pipelineInformation.policy && (
+          <span className="px-2 py-0.5 rounded text-[11px] font-semibold border border-slate-300 bg-white text-slate-700">
+            {pipelineInformation.policy}
+          </span>
+        )}
+        {pipelineInformation.terminal_action && (
+          <span className="px-2 py-0.5 rounded text-[11px] font-semibold border border-blue-200 bg-blue-50 text-blue-700 uppercase">
+            {pipelineInformation.terminal_action}
+          </span>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        {configuredGuardrails.map((guardrailName, index) => {
+          const stepResult = stepResultMap.get(guardrailName);
+          const outcome = stepResult?.outcome;
+          return (
+            <div key={`${guardrailName}-${index}`} className="flex items-center gap-2 text-sm">
+              <span className="text-slate-400 font-mono">{index + 1}.</span>
+              <span className="font-medium text-slate-800">{guardrailName}</span>
+              <span className={`px-2 py-0.5 rounded text-[11px] font-semibold ${getPipelineOutcomeClasses(outcome)}`}>
+                {formatPipelineOutcome(outcome)}
+              </span>
+              {stepResult?.action && (
+                <span className="text-xs text-slate-500 uppercase">
+                  {stepResult.action}
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -567,6 +663,10 @@ const EvaluationCard = ({ entry }: { entry: GuardrailInformation }) => {
                 ))}
               </div>
             </div>
+          )}
+
+          {entry.pipeline_information && (
+            <PipelineSummary pipelineInformation={entry.pipeline_information} />
           )}
 
           {/* Provider-specific details */}

@@ -1238,6 +1238,10 @@ class ProxyLogging:
             return data
 
         if result.terminal_action == "block":
+            ProxyLogging._merge_pipeline_metadata_for_logging(
+                source_data=result.modified_data,
+                request_data=data,
+            )
             ProxyLogging._add_pipeline_guardrail_information(
                 result=result,
                 data=data,
@@ -1265,6 +1269,10 @@ class ProxyLogging:
             raise HTTPException(status_code=400, detail=error_detail)
 
         if result.terminal_action == "modify_response":
+            ProxyLogging._merge_pipeline_metadata_for_logging(
+                source_data=result.modified_data,
+                request_data=data,
+            )
             ProxyLogging._add_pipeline_guardrail_information(
                 result=result,
                 data=data,
@@ -1283,6 +1291,132 @@ class ProxyLogging:
         return data
 
     @staticmethod
+    def _merge_pipeline_metadata_for_logging(
+        source_data: Optional[dict], request_data: dict
+    ) -> None:
+        """
+        Preserve guardrail metadata collected while executing a pipeline.
+
+        Pipeline steps execute against a working copy of the request data. When a
+        later step blocks/modifies the response we still want any earlier
+        guardrail success/failure metadata to survive into spend logs and
+        downstream tracing, but without mutating the original request payload
+        outside the metadata/logging fields.
+        """
+        if not isinstance(source_data, dict):
+            return
+
+        for metadata_key in ("metadata", "litellm_metadata"):
+            source_metadata = source_data.get(metadata_key)
+            if not isinstance(source_metadata, dict):
+                continue
+
+            existing_metadata = request_data.get(metadata_key)
+            if not isinstance(existing_metadata, dict):
+                request_data[metadata_key] = copy.deepcopy(source_metadata)
+                continue
+
+            existing_metadata.update(copy.deepcopy(source_metadata))
+
+    @staticmethod
+    def _get_pipeline_guardrail_status(step_outcome: str) -> str:
+        if step_outcome == "pass":
+            return "success"
+        if step_outcome == "fail":
+            return "guardrail_intervened"
+        return "guardrail_failed_to_respond"
+
+    @staticmethod
+    def _get_pipeline_information(result: Any, policy_name: str, event_hook: str) -> dict:
+        configured_guardrails = list(getattr(result, "configured_guardrails", None) or [])
+        executed_guardrails = [sr.guardrail_name for sr in result.step_results]
+        skipped_guardrails = [
+            guardrail_name
+            for guardrail_name in configured_guardrails
+            if guardrail_name not in executed_guardrails
+        ]
+
+        return {
+            "policy": policy_name,
+            "guardrail_mode": event_hook,
+            "terminal_action": result.terminal_action,
+            "configured_guardrails": configured_guardrails,
+            "executed_guardrails": executed_guardrails,
+            "skipped_guardrails": skipped_guardrails,
+            "step_results": [
+                {
+                    "guardrail": sr.guardrail_name,
+                    "outcome": sr.outcome,
+                    "action": sr.action_taken,
+                    "error_detail": sr.error_detail,
+                    "duration_seconds": sr.duration_seconds,
+                }
+                for sr in result.step_results
+            ],
+        }
+
+    @staticmethod
+    def _find_pipeline_guardrail_entry(
+        guardrail_information: list, guardrail_name: str, used_indexes: set[int]
+    ) -> Optional[dict]:
+        for index, entry in enumerate(guardrail_information):
+            if index in used_indexes or not isinstance(entry, dict):
+                continue
+            if entry.get("guardrail_name") == guardrail_name:
+                used_indexes.add(index)
+                return entry
+        return None
+
+    @staticmethod
+    def _append_pipeline_guardrail_entry(
+        data: dict,
+        step_result: Any,
+        pipeline_information: dict,
+        event_hook: str,
+    ) -> Optional[dict]:
+        callback = PipelineExecutor._find_guardrail_callback(step_result.guardrail_name)
+        guardrail_status = ProxyLogging._get_pipeline_guardrail_status(
+            step_outcome=step_result.outcome
+        )
+        if callback is not None:
+            callback.add_standard_logging_guardrail_information_to_request_data(
+                guardrail_json_response=step_result.error_detail or {},
+                request_data=data,
+                guardrail_status=guardrail_status,  # type: ignore[arg-type]
+                duration=step_result.duration_seconds,
+                event_type=cast(GuardrailEventHooks, event_hook),
+            )
+
+        if not isinstance(data.get("metadata"), dict) and not isinstance(
+            data.get("litellm_metadata"), dict
+        ):
+            data["metadata"] = {}
+
+        metadata = data.get("metadata", data.get("litellm_metadata", {})) or {}
+        guardrail_information = metadata.get("standard_logging_guardrail_information")
+        if not isinstance(guardrail_information, list):
+            guardrail_information = []
+            metadata["standard_logging_guardrail_information"] = guardrail_information
+
+        entry = ProxyLogging._find_pipeline_guardrail_entry(
+            guardrail_information=guardrail_information,
+            guardrail_name=step_result.guardrail_name,
+            used_indexes=set(),
+        )
+        if entry is None:
+            entry = {
+                "guardrail_name": step_result.guardrail_name,
+                "guardrail_mode": event_hook,
+                "guardrail_status": guardrail_status,
+                "guardrail_response": step_result.error_detail,
+                "duration": step_result.duration_seconds,
+            }
+            guardrail_information.append(entry)
+
+        entry["pipeline_information"] = copy.deepcopy(pipeline_information)
+        return entry
+
+    @staticmethod
     def _add_pipeline_guardrail_information(
         result: Any,
         data: dict,
@@ -1296,39 +1430,61 @@ class ProxyLogging:
         if not getattr(result, "step_results", None):
             return
 
-        relevant_step = result.step_results[-1]
-        add_guardrail_to_applied_guardrails_header(
-            request_data=data, guardrail_name=relevant_step.guardrail_name
-        )
-        callback = PipelineExecutor._find_guardrail_callback(
-            relevant_step.guardrail_name
-        )
-        if callback is None:
-            return
+        if not isinstance(data.get("metadata"), dict) and not isinstance(
+            data.get("litellm_metadata"), dict
+        ):
+            data["metadata"] = {}
 
-        callback.add_standard_logging_guardrail_information_to_request_data(
-            guardrail_json_response={
-                "policy": policy_name,
-                "terminal_action": result.terminal_action,
-                "message": result.modify_response_message
-                or result.error_message
-                or relevant_step.error_detail,
-                "step_results": [
-                    {
-                        "guardrail": sr.guardrail_name,
-                        "outcome": sr.outcome,
-                        "action": sr.action_taken,
-                        "error_detail": sr.error_detail,
-                        "duration_seconds": sr.duration_seconds,
-                    }
-                    for sr in result.step_results
-                ],
-            },
-            request_data=data,
-            guardrail_status="guardrail_intervened",
-            duration=relevant_step.duration_seconds,
-            event_type=cast(GuardrailEventHooks, event_hook),
+        metadata = data.get("metadata", data.get("litellm_metadata", {})) or {}
+        guardrail_information = metadata.get("standard_logging_guardrail_information")
+        if not isinstance(guardrail_information, list):
+            guardrail_information = []
+            metadata["standard_logging_guardrail_information"] = guardrail_information
+
+        pipeline_information = ProxyLogging._get_pipeline_information(
+            result=result,
+            policy_name=policy_name,
+            event_hook=event_hook,
         )
+        used_indexes: set[int] = set()
+
+        for step_index, step_result in enumerate(result.step_results):
+            add_guardrail_to_applied_guardrails_header(
+                request_data=data, guardrail_name=step_result.guardrail_name
+            )
+
+            entry = ProxyLogging._find_pipeline_guardrail_entry(
+                guardrail_information=guardrail_information,
+                guardrail_name=step_result.guardrail_name,
+                used_indexes=used_indexes,
+            )
+            if entry is None:
+                entry = ProxyLogging._append_pipeline_guardrail_entry(
+                    data=data,
+                    step_result=step_result,
+                    pipeline_information=pipeline_information,
+                    event_hook=event_hook,
+                )
+
+            if entry is None:
+                continue
+
+            entry.setdefault("guardrail_name", step_result.guardrail_name)
+            entry.setdefault("guardrail_mode", event_hook)
+            entry.setdefault(
+                "guardrail_status",
+                ProxyLogging._get_pipeline_guardrail_status(
+                    step_outcome=step_result.outcome
+                ),
+            )
+            if step_result.duration_seconds is not None and entry.get("duration") is None:
+                entry["duration"] = step_result.duration_seconds
+
+            entry["pipeline_information"] = {
+                **copy.deepcopy(pipeline_information),
+                "current_step_index": step_index,
+                "current_step_guardrail": step_result.guardrail_name,
+            }
 
     # The actual implementation of the function
     @overload

@@ -29,6 +29,18 @@ export interface GuardrailInformation {
   guardrail_response: GuardrailEntity[] | BedrockGuardrailResponse;
   masked_entity_count: Record<string, number>;
   guardrail_provider?: string;
+  pipeline_information?: {
+    policy?: string;
+    terminal_action?: string;
+    configured_guardrails?: string[];
+    executed_guardrails?: string[];
+    skipped_guardrails?: string[];
+    step_results?: Array<{
+      guardrail: string;
+      outcome: string;
+      action: string;
+    }>;
+  };
 }
 
 // ===== Builders =====

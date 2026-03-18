@@ -5211,13 +5211,26 @@ def _get_status_fields(
     # Map - guardrail_information.guardrail_status to guardrail_status
     #########################################################
     guardrail_status: GuardrailStatus = "not_run"
+    guardrail_status_priority: Dict[GuardrailStatus, int] = {
+        "not_run": 0,
+        "success": 1,
+        "guardrail_intervened": 2,
+        "guardrail_failed_to_respond": 3,
+    }
     if guardrail_information and isinstance(guardrail_information, list):
+        resolved_guardrail_statuses: List[GuardrailStatus] = []
         for information in guardrail_information:
             if isinstance(information, dict):
                 raw_status = information.get("guardrail_status", "not_run")
-                if raw_status != "not_run":
-                    guardrail_status = GUARDRAIL_STATUS_MAP.get(raw_status, "not_run")
-                    break
+                resolved_guardrail_statuses.append(
+                    GUARDRAIL_STATUS_MAP.get(raw_status, "not_run")
+                )
+
+        if resolved_guardrail_statuses:
+            guardrail_status = max(
+                resolved_guardrail_statuses,
+                key=lambda status: guardrail_status_priority.get(status, 0),
+            )
 
     return StandardLoggingPayloadStatusFields(
         llm_api_status=llm_api_status, guardrail_status=guardrail_status

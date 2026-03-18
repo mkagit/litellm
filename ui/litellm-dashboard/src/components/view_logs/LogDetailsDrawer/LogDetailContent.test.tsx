@@ -280,6 +280,42 @@ describe("LogDetailContent", () => {
     expect(screen.getByText(/Applied guardrails: openai-moderation-pre/)).toBeInTheDocument();
   });
 
+  it("should use the intervened pipeline step for the warning message", () => {
+    render(
+      <LogDetailContent
+        logEntry={createLogEntry({
+          metadata: {
+            status: "success",
+            status_fields: {
+              llm_api_status: "success",
+              guardrail_status: "guardrail_intervened",
+            },
+            applied_guardrails: ["openai-moderation-pre", "generic-api"],
+            guardrail_information: [
+              {
+                guardrail_name: "openai-moderation-pre",
+                guardrail_status: "success",
+                guardrail_response: {
+                  message: "Allowed by moderation policy.",
+                },
+              },
+              {
+                guardrail_name: "generic-api",
+                guardrail_status: "guardrail_intervened",
+                guardrail_response: {
+                  message: "Blocked by generic guardrail.",
+                },
+              },
+            ],
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText(/Blocked by generic guardrail./)).toBeInTheDocument();
+    expect(screen.queryByText(/Allowed by moderation policy./)).not.toBeInTheDocument();
+  });
+
   it("should display cache hit information when cache_hit is true", () => {
     render(
       <LogDetailContent

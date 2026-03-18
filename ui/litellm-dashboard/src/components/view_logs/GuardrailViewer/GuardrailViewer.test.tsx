@@ -169,4 +169,38 @@ describe("GuardrailViewer", () => {
     expect(screen.getByText("Outputs")).toBeInTheDocument();
     expect(screen.getByText("ok")).toBeInTheDocument();
   });
+
+  it("should render pipeline summary for configured but skipped downstream guardrails", async () => {
+    const user = userEvent.setup();
+    const data = makeGuardrailInformation({
+      guardrail_name: "openai-moderation-pre",
+      guardrail_status: "guardrail_intervened",
+      guardrail_provider: "unknown",
+      pipeline_information: {
+        policy: "baseline-youth-guardrails",
+        terminal_action: "modify_response",
+        configured_guardrails: [
+          "openai-moderation-pre",
+          "child-policy-judge-pre",
+        ],
+        executed_guardrails: ["openai-moderation-pre"],
+        skipped_guardrails: ["child-policy-judge-pre"],
+        step_results: [
+          {
+            guardrail: "openai-moderation-pre",
+            outcome: "fail",
+            action: "modify_response",
+          },
+        ],
+      },
+    });
+    renderWithProviders(<GuardrailViewer data={data} />);
+
+    await user.click(screen.getByText("openai-moderation-pre"));
+
+    expect(screen.getByText("Pipeline Summary")).toBeInTheDocument();
+    expect(screen.getByText("baseline-youth-guardrails")).toBeInTheDocument();
+    expect(screen.getByText("child-policy-judge-pre")).toBeInTheDocument();
+    expect(screen.getByText("SKIPPED")).toBeInTheDocument();
+  });
 });

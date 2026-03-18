@@ -2729,6 +2729,15 @@ class StandardLoggingGuardrailInformation(TypedDict, total=False):
     risk_score: Optional[float]
     """Risk score 0-10 indicating how risky the request was (higher = riskier). Computed by the guardrail provider."""
 
+    pipeline_information: Optional[dict]
+    """
+    Optional pipeline execution summary for this guardrail entry.
+
+    Used when guardrails are executed as part of a policy-engine pipeline so
+    downstream logs/traces can show the full configured path, not just the
+    terminal step that blocked or modified the response.
+    """
+
 
 class GuardrailTracingDetail(TypedDict, total=False):
     """
