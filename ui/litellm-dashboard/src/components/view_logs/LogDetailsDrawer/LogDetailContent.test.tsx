@@ -252,6 +252,34 @@ describe("LogDetailContent", () => {
     expect(screen.getByText("2 masked")).toBeInTheDocument();
   });
 
+  it("should display a warning alert when a guardrail intervenes", () => {
+    render(
+      <LogDetailContent
+        logEntry={createLogEntry({
+          metadata: {
+            status: "success",
+            status_fields: {
+              llm_api_status: "success",
+              guardrail_status: "guardrail_intervened",
+            },
+            applied_guardrails: ["openai-moderation-pre"],
+            guardrail_information: [
+              {
+                guardrail_name: "openai-moderation-pre",
+                guardrail_response: {
+                  message: "Blocked by moderation policy.",
+                },
+              },
+            ],
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Guardrail Intervened")).toBeInTheDocument();
+    expect(screen.getByText(/Applied guardrails: openai-moderation-pre/)).toBeInTheDocument();
+  });
+
   it("should display cache hit information when cache_hit is true", () => {
     render(
       <LogDetailContent

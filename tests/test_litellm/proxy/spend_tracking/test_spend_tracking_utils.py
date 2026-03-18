@@ -1196,6 +1196,88 @@ def test_get_logging_payload_guardrail_info_when_no_standard_logging_payload():
     assert metadata_result["guardrail_information"] == guardrail_info
 
 
+def test_get_logging_payload_preserves_guardrail_status_fields_and_applied_guardrails():
+    kwargs = {
+        "model": "gpt-4",
+        "litellm_call_id": "test-call-id",
+        "litellm_params": {
+            "metadata": {
+                "user_api_key": "test-key",
+            },
+            "proxy_server_request": {},
+        },
+        "standard_logging_object": StandardLoggingPayload(
+            id="guardrail-status-123",
+            trace_id="trace-guardrail-123",
+            call_type="completion",
+            stream=False,
+            response_cost=0.0,
+            cost_breakdown=None,
+            response_cost_failure_debug_info=None,
+            status="success",
+            status_fields={
+                "llm_api_status": "success",
+                "guardrail_status": "guardrail_intervened",
+            },
+            custom_llm_provider="openai",
+            total_tokens=0,
+            prompt_tokens=0,
+            completion_tokens=0,
+            startTime=1234567890.0,
+            endTime=1234567891.0,
+            completionStartTime=None,
+            response_time=1.0,
+            model_map_information=StandardLoggingModelInformation(
+                model_map_key="gpt-4", model_map_value=None
+            ),
+            model="gpt-4",
+            model_id=None,
+            model_group="gpt-4",
+            api_base="https://api.example.com",
+            metadata={
+                "user_api_key": "test-key",
+                "applied_guardrails": ["openai-moderation-pre"],
+            },
+            cache_hit=False,
+            cache_key=None,
+            saved_cache_cost=0.0,
+            request_tags=[],
+            end_user=None,
+            requester_ip_address=None,
+            user_agent=None,
+            messages=[],
+            response={},
+            error_str=None,
+            usage_object=None,
+            hidden_params={},
+            response_cost_calculator_metadata=None,
+            guardrail_information=[
+                {
+                    "guardrail_name": "openai-moderation-pre",
+                    "guardrail_status": "guardrail_intervened",
+                    "guardrail_mode": "pre_call",
+                }
+            ],
+        ),
+    }
+
+    with patch("litellm.proxy.proxy_server.master_key", "sk-master"):
+        with patch("litellm.proxy.proxy_server.general_settings", {}):
+            payload = get_logging_payload(
+                kwargs=kwargs,
+                response_obj={},
+                start_time=datetime.datetime.now(tz=timezone.utc),
+                end_time=datetime.datetime.now(tz=timezone.utc),
+            )
+
+    metadata_result = json.loads(payload["metadata"])
+    assert metadata_result["applied_guardrails"] == ["openai-moderation-pre"]
+    assert metadata_result["status_fields"] == {
+        "llm_api_status": "success",
+        "guardrail_status": "guardrail_intervened",
+    }
+
+
 @patch("litellm.proxy.proxy_server.master_key", None)
 @patch("litellm.proxy.proxy_server.general_settings", {})
 def test_get_logging_payload_includes_retry_info_in_spend_logs_metadata():

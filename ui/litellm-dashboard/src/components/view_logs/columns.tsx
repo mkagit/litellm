@@ -8,6 +8,7 @@ import { TableHeaderSortDropdown } from "../common_components/TableHeaderSortDro
 import { TimeCell } from "./time_cell";
 import { AGENT_CALL_TYPES, MCP_CALL_TYPES } from "./constants";
 import { AgentBadge, AgentIcon, LlmBadge, McpBadge, SparkleIcon, WrenchIcon } from "./TypeBadges";
+import { getLogStatusPresentation } from "./utils";
 
 /** API sort field mapping for /spend/logs/ui endpoint */
 export const LOGS_SORT_FIELD_MAP = {
@@ -171,17 +172,23 @@ export const createColumns = (sortProps?: LogsSortProps): ColumnDef<LogEntry>[] 
     header: "Status",
     accessorKey: "metadata.status",
     cell: (info: any) => {
-      const status = info.getValue() || "Success";
-      const isSuccess = status.toLowerCase() !== "failure";
+      const row = info.row.original;
+      const statusPresentation = getLogStatusPresentation(row.metadata);
+      const className =
+        statusPresentation.tone === "error"
+          ? "bg-red-100 text-red-800"
+          : statusPresentation.tone === "warning"
+            ? "bg-amber-100 text-amber-800"
+            : "bg-green-100 text-green-800";
 
       return (
-        <span
-          className={`px-2 py-1 rounded-md text-xs font-medium inline-block text-center w-16 ${
-            isSuccess ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
-          }`}
-        >
-          {isSuccess ? "Success" : "Failure"}
-        </span>
+        <Tooltip title={statusPresentation.detail}>
+          <span
+            className={`px-2 py-1 rounded-md text-xs font-medium inline-block text-center min-w-[72px] ${className}`}
+          >
+            {statusPresentation.label}
+          </span>
+        </Tooltip>
       );
     },
   },

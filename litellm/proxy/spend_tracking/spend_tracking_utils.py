@@ -32,6 +32,7 @@ from litellm.types.utils import (
     StandardLoggingMCPToolCall,
     StandardLoggingModelInformation,
     StandardLoggingPayload,
+    StandardLoggingPayloadStatusFields,
     StandardLoggingVectorStoreRequest,
     VectorStoreSearchResponse,
 )
@@ -83,6 +84,7 @@ def _get_spend_logs_metadata(
     cold_storage_object_key: Optional[str] = None,
     litellm_overhead_time_ms: Optional[float] = None,
     cost_breakdown: Optional[CostBreakdown] = None,
+    status_fields: Optional[StandardLoggingPayloadStatusFields] = None,
 ) -> SpendLogsMetadata:
     if metadata is None:
         return SpendLogsMetadata(
@@ -97,6 +99,7 @@ def _get_spend_logs_metadata(
             requester_ip_address=None,
             additional_usage_values=None,
             applied_guardrails=None,
+            status_fields=None,
             status=None or "success",
             error_information=None,
             proxy_server_request=None,
@@ -124,6 +127,7 @@ def _get_spend_logs_metadata(
         }
     )
     clean_metadata["applied_guardrails"] = applied_guardrails
+    clean_metadata["status_fields"] = status_fields
     clean_metadata["batch_models"] = batch_models
     clean_metadata["mcp_tool_call_metadata"] = mcp_tool_call_metadata
     clean_metadata[
@@ -342,6 +346,15 @@ def get_logging_payload(  # noqa: PLR0915
         metadata,
         applied_guardrails=(
             standard_logging_payload["metadata"].get("applied_guardrails", None)
+            if standard_logging_payload is not None
+            else (
+                metadata.get("applied_guardrails", None)
+                if metadata is not None
+                else None
+            )
+        ),
+        status_fields=(
+            standard_logging_payload.get("status_fields", None)
             if standard_logging_payload is not None
             else None
         ),

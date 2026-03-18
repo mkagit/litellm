@@ -23,7 +23,7 @@ interface DrawerHeaderProps {
   onPrevious: () => void;
   onNext: () => void;
   statusLabel: string;
-  statusColor: "error" | "success";
+  statusColor: "error" | "success" | "warning";
   environment: string;
 }
 
@@ -185,7 +185,7 @@ function StatusBar({
 }: {
   log: LogEntry;
   statusLabel: string;
-  statusColor: "error" | "success";
+  statusColor: "error" | "success" | "warning";
   environment: string;
 }) {
   return (

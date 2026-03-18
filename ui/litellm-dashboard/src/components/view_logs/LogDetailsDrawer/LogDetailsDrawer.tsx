@@ -19,6 +19,7 @@ import { getSpendString } from "@/utils/dataUtils";
 import { normalizeGuardrailEntries } from "./utils";
 import { DRAWER_WIDTH } from "./constants";
 import { useLogDetails } from "@/app/(dashboard)/hooks/logDetails/useLogDetails";
+import { getLogStatusPresentation } from "../utils";
 
 export interface LogDetailsDrawerProps {
   open: boolean;
@@ -209,8 +210,9 @@ export function LogDetailsDrawer({
   const metadata = currentLog?.metadata || {};
 
   // Status display values
-  const statusLabel = metadata.status === "failure" ? "Failure" : "Success";
-  const statusColor = metadata.status === "failure" ? ("error" as const) : ("success" as const);
+  const statusPresentation = getLogStatusPresentation(metadata);
+  const statusLabel = statusPresentation.label;
+  const statusColor = statusPresentation.tone;
   const environment = metadata?.user_api_key_team_alias || "default";
 
   const totalSessionCost = sessionLogs.reduce((sum, row) => sum + (row.spend || 0), 0);

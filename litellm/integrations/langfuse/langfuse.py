@@ -707,6 +707,15 @@ class LangFuseLogger:
                 clean_metadata["hidden_params"] = filter_exceptions_from_params(
                     hidden_params
                 )
+                if standard_logging_object.get("status_fields") is not None:
+                    clean_metadata["status_fields"] = standard_logging_object.get(
+                        "status_fields"
+                    )
+                applied_guardrails = standard_logging_object.get("metadata", {}).get(
+                    "applied_guardrails"
+                )
+                if applied_guardrails:
+                    clean_metadata["applied_guardrails"] = applied_guardrails
 
             if (
                 litellm.langfuse_default_tags is not None
@@ -736,6 +745,17 @@ class LangFuseLogger:
                     clean_metadata["cache_hit"] = kwargs["cache_hit"]
                 if existing_trace_id is None:
                     trace_params.update({"tags": tags})
+
+            trace_metadata = self._get_langfuse_trace_metadata(
+                standard_logging_object=standard_logging_object,
+                clean_metadata=clean_metadata,
+            )
+            if trace_metadata:
+                existing_trace_metadata = trace_params.get("metadata", {})
+                if not isinstance(existing_trace_metadata, dict):
+                    existing_trace_metadata = {}
+                existing_trace_metadata.update(trace_metadata)
+                trace_params["metadata"] = existing_trace_metadata
 
             proxy_server_request = litellm_params.get("proxy_server_request", None)
             if proxy_server_request:
@@ -1067,23 +1087,75 @@ class LangFuseLogger:
                 )
                 continue
 
+            guardrail_name = guardrail_entry.get("guardrail_name", None)
+            span_name = (
+                f"guardrail:{guardrail_name}" if guardrail_name is not None else "guardrail"
+            )
+            guardrail_response = guardrail_entry.get("guardrail_response", None)
+            span_metadata: Dict[str, Any] = {
+                "guardrail_name": guardrail_name,
+                "guardrail_mode": guardrail_entry.get("guardrail_mode", None),
+                "guardrail_masked_entity_count": guardrail_entry.get(
+                    "masked_entity_count", None
+                ),
+                "guardrail_provider": guardrail_entry.get("guardrail_provider", None),
+                "guardrail_status": guardrail_entry.get("guardrail_status", None),
+            }
+            if isinstance(guardrail_response, dict):
+                span_metadata["guardrail_policy"] = guardrail_response.get(
+                    "policy", None
+                )
+                span_metadata["guardrail_terminal_action"] = guardrail_response.get(
+                    "terminal_action", None
+                )
+
             span = trace.span(
-                name="guardrail",
+                name=span_name,
                 input=guardrail_entry.get("guardrail_request", None),
-                output=guardrail_entry.get("guardrail_response", None),
-                metadata={
-                    "guardrail_name": guardrail_entry.get("guardrail_name", None),
-                    "guardrail_mode": guardrail_entry.get("guardrail_mode", None),
-                    "guardrail_masked_entity_count": guardrail_entry.get(
-                        "masked_entity_count", None
-                    ),
-                },
+                output=guardrail_response,
+                metadata=span_metadata,
                 start_time=guardrail_entry.get("start_time", None),  # type: ignore
                 end_time=guardrail_entry.get("end_time", None),  # type: ignore
             )
 
             verbose_logger.debug(f"Logged guardrail information as span: {span}")
             span.end()
+
+    @staticmethod
+    def _get_langfuse_trace_metadata(
+        standard_logging_object: Optional[StandardLoggingPayload],
+        clean_metadata: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        if standard_logging_object is None:
+            return {}
+
+        guardrail_information = standard_logging_object.get("guardrail_information") or []
+        applied_guardrails = clean_metadata.get("applied_guardrails") or [
+            entry.get("guardrail_name")
+            for entry in guardrail_information
+            if isinstance(entry, dict) and entry.get("guardrail_name")
+        ]
+        applied_guardrails = list(dict.fromkeys(applied_guardrails))
+
+        trace_metadata: Dict[str, Any] = {}
+        status_fields = standard_logging_object.get("status_fields")
+        if status_fields:
+            trace_metadata["status_fields"] = status_fields
+        if applied_guardrails:
+            trace_metadata["applied_guardrails"] = applied_guardrails
+        if guardrail_information:
+            trace_metadata["guardrail_summary"] = {
+                "guardrail_count": len(guardrail_information),
+                "intervened_guardrails": [
+                    entry.get("guardrail_name")
+                    for entry in guardrail_information
+                    if isinstance(entry, dict)
+                    and entry.get("guardrail_status") == "guardrail_intervened"
+                    and entry.get("guardrail_name") is not None
+                ],
+            }
+
+        return trace_metadata
 
 
 def _add_prompt_to_generation_params(

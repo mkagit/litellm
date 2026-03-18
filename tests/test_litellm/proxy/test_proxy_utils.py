@@ -190,6 +190,7 @@ def test_handle_pipeline_result_adds_guardrail_information_for_modify_response()
 
     info = data["metadata"]["standard_logging_guardrail_information"]
     assert len(info) == 1
+    assert data["metadata"]["applied_guardrails"] == ["content-filter"]
     assert info[0]["guardrail_name"] == "content-filter"
     assert info[0]["guardrail_status"] == "guardrail_intervened"
     assert info[0]["guardrail_mode"] == GuardrailEventHooks.pre_call.value

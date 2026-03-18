@@ -32,6 +32,7 @@ import {
 } from "./constants";
 import { ToolsSection } from "../ToolsSection";
 import { PrettyMessagesView } from "./PrettyMessagesView";
+import { getAppliedGuardrailNames, getLogStatusPresentation } from "../utils";
 
 const { Text } = Typography;
 
@@ -53,6 +54,7 @@ export interface LogDetailContentProps {
  */
 export function LogDetailContent({ logEntry, onOpenSettings, isLoadingDetails = false, accessToken }: LogDetailContentProps) {
   const metadata = logEntry.metadata || {};
+  const statusPresentation = getLogStatusPresentation(metadata);
   const hasError = metadata.status === "failure";
   const errorInfo = hasError ? metadata.error_information : null;
 
@@ -67,6 +69,12 @@ export function LogDetailContent({ logEntry, onOpenSettings, isLoadingDetails = 
   const hasGuardrailData = guardrailEntries.length > 0;
   const totalMaskedEntities = calculateTotalMaskedEntities(guardrailEntries);
   const primaryGuardrailLabel = getGuardrailLabel(guardrailEntries);
+  const appliedGuardrailNames = getAppliedGuardrailNames(metadata);
+  const primaryGuardrailEntry = guardrailEntries[0];
+  const primaryGuardrailMessage =
+    primaryGuardrailEntry?.guardrail_response?.message ||
+    primaryGuardrailEntry?.guardrail_response?.blocked_reason ||
+    undefined;
 
   // Vector store data
   const hasVectorStoreData = checkHasVectorStoreData(metadata);
@@ -98,6 +106,25 @@ export function LogDetailContent({ logEntry, onOpenSettings, isLoadingDetails = 
           showIcon
           message="Request Failed"
           description={<ErrorDescription errorInfo={errorInfo} />}
+          className="mb-6"
+        />
+      )}
+
+      {!hasError && statusPresentation.label === "Guardrail" && (
+        <Alert
+          type="warning"
+          showIcon
+          message="Guardrail Intervened"
+          description={
+            [
+              appliedGuardrailNames.length > 0
+                ? `Applied guardrails: ${appliedGuardrailNames.join(", ")}`
+                : null,
+              primaryGuardrailMessage ?? "The request was modified or blocked by a guardrail before the final response was returned.",
+            ]
+              .filter(Boolean)
+              .join(" ")
+          }
           className="mb-6"
         />
       )}

@@ -234,7 +234,7 @@ async def test_langfuse_trace_includes_guardrail_information():
         guardrail_span = None
         for item in actual_payload["batch"]:
             if (item["type"] == "span-create" and 
-                item["body"].get("name") == "guardrail"):
+                item["body"].get("name") == "guardrail:presidio_guard"):
                 guardrail_span = item
                 break
         
@@ -242,7 +242,7 @@ async def test_langfuse_trace_includes_guardrail_information():
         assert guardrail_span is not None, "No guardrail span found in Langfuse payload"
         
         # Validate the structure of the guardrail span
-        assert guardrail_span["body"]["name"] == "guardrail"
+        assert guardrail_span["body"]["name"] == "guardrail:presidio_guard"
         assert "metadata" in guardrail_span["body"]
         assert guardrail_span["body"]["metadata"]["guardrail_name"] == "presidio_guard"
         assert guardrail_span["body"]["metadata"]["guardrail_mode"] == GuardrailEventHooks.pre_call

@@ -1289,10 +1289,17 @@ class ProxyLogging:
         policy_name: str,
         event_hook: str,
     ) -> None:
+        from litellm.proxy.common_utils.callback_utils import (
+            add_guardrail_to_applied_guardrails_header,
+        )
+
         if not getattr(result, "step_results", None):
             return
 
         relevant_step = result.step_results[-1]
+        add_guardrail_to_applied_guardrails_header(
+            request_data=data, guardrail_name=relevant_step.guardrail_name
+        )
         callback = PipelineExecutor._find_guardrail_callback(
             relevant_step.guardrail_name
         )
