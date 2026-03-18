@@ -3,6 +3,7 @@ import os
 import sys
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 sys.path.insert(
@@ -12,6 +13,7 @@ sys.path.insert(
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from litellm.integrations.custom_guardrail import ModifyResponseException
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.hooks.proxy_track_cost_callback import _ProxyDBLogger
 from litellm.types.utils import StandardLoggingPayload
@@ -81,6 +83,62 @@ async def test_async_post_call_failure_hook():
         assert metadata["status"] == "failure"
         assert "error_information" in metadata
         assert metadata["original_key"] == "original_value"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "original_exception",
+    [
+        HTTPException(status_code=400, detail={"error": "Blocked by guardrail"}),
+        ModifyResponseException(
+            message="Blocked by guardrail",
+            model="gpt-4",
+            request_data={"stream": True},
+            guardrail_name="pipeline:test-policy",
+            detection_info=None,
+        ),
+    ],
+)
+async def test_async_post_call_failure_hook_does_not_mark_guardrail_intervention_as_failure(
+    original_exception,
+):
+    logger = _ProxyDBLogger()
+    user_api_key_dict = UserAPIKeyAuth(
+        api_key="test_api_key",
+        key_alias="test_alias",
+        user_id="test_user_id",
+        team_id="test_team_id",
+    )
+    request_data = {
+        "model": "gpt-4",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "metadata": {
+            "standard_logging_guardrail_information": [
+                {
+                    "guardrail_name": "content-filter",
+                    "guardrail_status": "guardrail_intervened",
+                }
+            ]
+        },
+        "litellm_params": {},
+    }
+
+    with patch(
+        "litellm.proxy.db.db_spend_update_writer.DBSpendUpdateWriter.update_database",
+        new_callable=AsyncMock,
+    ) as mock_update_database:
+        await logger.async_post_call_failure_hook(
+            request_data=request_data,
+            original_exception=original_exception,
+            user_api_key_dict=user_api_key_dict,
+        )
+
+        mock_update_database.assert_called_once()
+        metadata = mock_update_database.call_args[1]["kwargs"]["litellm_params"][
+            "metadata"
+        ]
+        assert metadata.get("status") != "failure"
+        assert "error_information" not in metadata
 
 
 @pytest.mark.asyncio

@@ -1215,6 +1215,7 @@ class ProxyLogging:
                 result=result,
                 data=data,
                 policy_name=policy_name,
+                event_hook=event_hook,
             )
 
         return data
@@ -1224,6 +1225,7 @@ class ProxyLogging:
         result: Any,
         data: dict,
         policy_name: str,
+        event_hook: str,
     ) -> dict:
         """
         Handle a PipelineExecutionResult — allow, block, or modify_response.
@@ -1236,6 +1238,12 @@ class ProxyLogging:
             return data
 
         if result.terminal_action == "block":
+            ProxyLogging._add_pipeline_guardrail_information(
+                result=result,
+                data=data,
+                policy_name=policy_name,
+                event_hook=event_hook,
+            )
             step_results_serializable = [
                 {
                     "guardrail": sr.guardrail_name,
@@ -1257,6 +1265,12 @@ class ProxyLogging:
             raise HTTPException(status_code=400, detail=error_detail)
 
         if result.terminal_action == "modify_response":
+            ProxyLogging._add_pipeline_guardrail_information(
+                result=result,
+                data=data,
+                policy_name=policy_name,
+                event_hook=event_hook,
+            )
             raise ModifyResponseException(
                 message=result.modify_response_message
                 or "Response modified by pipeline",
@@ -1267,6 +1281,47 @@ class ProxyLogging:
             )
 
         return data
+
+    @staticmethod
+    def _add_pipeline_guardrail_information(
+        result: Any,
+        data: dict,
+        policy_name: str,
+        event_hook: str,
+    ) -> None:
+        if not getattr(result, "step_results", None):
+            return
+
+        relevant_step = result.step_results[-1]
+        callback = PipelineExecutor._find_guardrail_callback(
+            relevant_step.guardrail_name
+        )
+        if callback is None:
+            return
+
+        callback.add_standard_logging_guardrail_information_to_request_data(
+            guardrail_json_response={
+                "policy": policy_name,
+                "terminal_action": result.terminal_action,
+                "message": result.modify_response_message
+                or result.error_message
+                or relevant_step.error_detail,
+                "step_results": [
+                    {
+                        "guardrail": sr.guardrail_name,
+                        "outcome": sr.outcome,
+                        "action": sr.action_taken,
+                        "error_detail": sr.error_detail,
+                        "duration_seconds": sr.duration_seconds,
+                    }
+                    for sr in result.step_results
+                ],
+            },
+            request_data=data,
+            guardrail_status="guardrail_intervened",
+            duration=relevant_step.duration_seconds,
+            event_type=cast(GuardrailEventHooks, event_hook),
+        )
 
     # The actual implementation of the function
     @overload

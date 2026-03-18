@@ -5,6 +5,7 @@ from typing import Any, List, Optional, Union, cast
 
 import litellm
 from litellm._logging import verbose_proxy_logger
+from litellm.integrations.custom_guardrail import CustomGuardrail
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils.core_helpers import (
     _get_parent_otel_span_from_kwargs,
@@ -50,6 +51,9 @@ class _ProxyDBLogger(CustomLogger):
 
         from litellm.proxy.proxy_server import proxy_logging_obj
 
+        is_guardrail_intervention = CustomGuardrail._is_guardrail_intervention(
+            original_exception
+        )
         _metadata = dict(
             StandardLoggingUserAPIKeyMetadata(
                 user_api_key_hash=user_api_key_dict.api_key,
@@ -73,13 +77,14 @@ class _ProxyDBLogger(CustomLogger):
             )
         )
         _metadata["user_api_key"] = user_api_key_dict.api_key
-        _metadata["status"] = "failure"
-        _metadata[
-            "error_information"
-        ] = StandardLoggingPayloadSetup.get_error_information(
-            original_exception=original_exception,
-            traceback_str=traceback_str,
-        )
+        if not is_guardrail_intervention:
+            _metadata["status"] = "failure"
+            _metadata[
+                "error_information"
+            ] = StandardLoggingPayloadSetup.get_error_information(
+                original_exception=original_exception,
+                traceback_str=traceback_str,
+            )
 
         _metadata = await _ProxyDBLogger._enrich_failure_metadata_with_key_info(
             metadata=_metadata,

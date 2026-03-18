@@ -2,6 +2,7 @@ import datetime as real_datetime
 import json
 import os
 import sys
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -11,6 +12,7 @@ import litellm
 from litellm.caching.caching import DualCache
 from litellm.integrations.custom_guardrail import CustomGuardrail, ModifyResponseException
 from litellm.proxy._types import ProxyErrorTypes
+from litellm.types.guardrails import GuardrailEventHooks
 from litellm.proxy.utils import ProxyLogging
 
 sys.path.insert(
@@ -153,6 +155,44 @@ async def test_post_call_failure_hook_skips_proxy_failure_logging_for_modify_res
 
     proxy_logging_obj.update_request_status.assert_not_awaited()
     proxy_logging_obj._handle_logging_proxy_only_error.assert_not_awaited()
+
+
+def test_handle_pipeline_result_adds_guardrail_information_for_modify_response():
+    guardrail = CountingGuardrail(guardrail_name="content-filter")
+    original_callbacks = litellm.callbacks
+    litellm.callbacks = [guardrail]
+    result = SimpleNamespace(
+        terminal_action="modify_response",
+        modify_response_message="Blocked by policy",
+        error_message=None,
+        step_results=[
+            SimpleNamespace(
+                guardrail_name="content-filter",
+                outcome="fail",
+                action_taken="modify_response",
+                error_detail="Blocked by policy",
+                duration_seconds=0.12,
+            )
+        ],
+    )
+    data = {"metadata": {}}
+
+    try:
+        with pytest.raises(ModifyResponseException):
+            ProxyLogging._handle_pipeline_result(
+                result=result,
+                data=data,
+                policy_name="policy-a",
+                event_hook=GuardrailEventHooks.pre_call.value,
+            )
+    finally:
+        litellm.callbacks = original_callbacks
+
+    info = data["metadata"]["standard_logging_guardrail_information"]
+    assert len(info) == 1
+    assert info[0]["guardrail_name"] == "content-filter"
+    assert info[0]["guardrail_status"] == "guardrail_intervened"
+    assert info[0]["guardrail_mode"] == GuardrailEventHooks.pre_call.value
 
 
 def test_get_model_group_info_order():
