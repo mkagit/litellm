@@ -6,7 +6,9 @@ import sys
 import pytest
 from fastapi import HTTPException
 
+import litellm
 from litellm.caching.caching import DualCache
+from litellm.integrations.custom_guardrail import CustomGuardrail
 from litellm.proxy._types import ProxyErrorTypes
 from litellm.proxy.utils import ProxyLogging
 
@@ -18,6 +20,23 @@ sys.path.insert(
 from unittest.mock import MagicMock
 
 from litellm.proxy.utils import get_custom_url, join_paths
+
+
+class CountingGuardrail(CustomGuardrail):
+    def __init__(self, guardrail_name: str):
+        super().__init__(
+            guardrail_name=guardrail_name,
+            event_hook="pre_call",
+            default_on=True,
+        )
+        self.calls = 0
+
+    def should_run_guardrail(self, data, event_type) -> bool:
+        return True
+
+    async def async_pre_call_hook(self, user_api_key_dict, cache, data, call_type):
+        self.calls += 1
+        return None
 
 
 def test_get_custom_url(monkeypatch):
@@ -69,6 +88,32 @@ def test_proxy_only_error_false_for_other_error_type():
         )
         is False
     )
+
+
+@pytest.mark.asyncio
+async def test_pre_call_hook_skips_pipeline_managed_guardrail_list():
+    proxy_logging_obj = ProxyLogging(user_api_key_cache=DualCache())
+    guardrail = CountingGuardrail(guardrail_name="content-filter")
+    original_callbacks = litellm.callbacks
+    litellm.callbacks = [guardrail]
+
+    try:
+        result = await proxy_logging_obj.pre_call_hook(
+            user_api_key_dict=MagicMock(),
+            data={
+                "model": "gpt-4o-mini",
+                "messages": [{"role": "user", "content": "hello"}],
+                "metadata": {
+                    "_pipeline_managed_guardrails": ["content-filter"],
+                },
+            },
+            call_type="completion",
+        )
+    finally:
+        litellm.callbacks = original_callbacks
+
+    assert result is not None
+    assert guardrail.calls == 0
 
 
 def test_get_model_group_info_order():

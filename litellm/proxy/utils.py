@@ -1340,7 +1340,12 @@ class ProxyLogging:
 
             # Get pipeline-managed guardrails to skip in normal loop
             metadata = data.get("metadata", data.get("litellm_metadata", {})) or {}
-            pipeline_managed: set = metadata.get("_pipeline_managed_guardrails", set())
+            pipeline_managed_raw = metadata.get("_pipeline_managed_guardrails", [])
+            pipeline_managed = (
+                pipeline_managed_raw
+                if isinstance(pipeline_managed_raw, set)
+                else set(pipeline_managed_raw)
+            )
 
             for callback in litellm.callbacks:
                 start_time = time.time()

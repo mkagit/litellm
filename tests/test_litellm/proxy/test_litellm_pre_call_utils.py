@@ -13,6 +13,7 @@ from litellm.proxy._types import TeamCallbackMetadata, UserAPIKeyAuth
 from litellm.proxy.litellm_pre_call_utils import (
     KeyAndTeamLoggingSettings,
     LiteLLMProxyRequestSetup,
+    _apply_resolved_guardrails_to_metadata,
     _get_dynamic_logging_metadata,
     _get_enforced_params,
     _get_metadata_variable_name,
@@ -1817,3 +1818,30 @@ async def test_bearer_token_not_in_debug_logs():
         f"Bearer token leaked in debug logs. "
         f"Found token in log output:\n{log_output[:500]}"
     )
+
+
+def test_apply_resolved_guardrails_to_metadata_stores_pipeline_managed_guardrails_as_list():
+    context = MagicMock()
+    pipeline = MagicMock()
+    pipeline.steps = [MagicMock(guardrail="beta"), MagicMock(guardrail="alpha")]
+
+    with patch(
+        "litellm.proxy.policy_engine.policy_resolver.PolicyResolver.resolve_guardrails_for_context",
+        return_value=[],
+    ), patch(
+        "litellm.proxy.policy_engine.policy_resolver.PolicyResolver.resolve_pipelines_for_context",
+        return_value=[("content-policy", pipeline)],
+    ), patch(
+        "litellm.proxy.policy_engine.policy_resolver.PolicyResolver.get_pipeline_managed_guardrails",
+        return_value={"beta", "alpha"},
+    ):
+        data = {}
+        _apply_resolved_guardrails_to_metadata(
+            data=data,
+            metadata_variable_name="metadata",
+            context=context,
+            policy_names=["content-policy"],
+            policies={},
+        )
+
+    assert data["metadata"]["_pipeline_managed_guardrails"] == ["alpha", "beta"]

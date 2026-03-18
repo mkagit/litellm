@@ -1786,7 +1786,7 @@ def _apply_resolved_guardrails_to_metadata(
         data[metadata_variable_name]["_guardrail_pipelines"] = pipelines
         data[metadata_variable_name][
             "_pipeline_managed_guardrails"
-        ] = pipeline_managed_guardrails
+        ] = sorted(pipeline_managed_guardrails)
         verbose_proxy_logger.debug(
             f"Policy engine: resolved {len(pipelines)} pipeline(s), "
             f"managed guardrails: {pipeline_managed_guardrails}"
